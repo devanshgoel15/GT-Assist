@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GT Assist — Hindi & English AI Assistant</title>
+  <meta name="description"
+    content="GT Assist — a smart AI assistant that understands and replies in both Hindi and English" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <img src="company-logo.png" alt="Germanium Technologies Logo" class="logo-img" />
+          <h1>GT Assist</h1>
+        </div>
+        <p class="tagline">Germanium Technologies Limited</p>
+      </div>
+      <div class="sidebar-info">
+        <div class="info-card">
+          <div class="info-icon">🤖</div>
+          <div>
+            <h3>GT Assist</h3>
+            <p>By Germanium Technologies Ltd</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tickets Section -->
+      <div class="sidebar-tickets">
+        <div class="tickets-header">
+          <h3>Support Tickets</h3>
+          <button id="newTicketBtn" class="new-ticket-btn" title="Create ticket">+</button>
+        </div>
+        <div id="ticketsList" class="tickets-list">
+          <p class="tickets-empty">No tickets yet</p>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button id="clearBtn" class="clear-btn">
+          <span>🗑️</span> Clear Chat
+        </button>
+      </div>
+      <button id="sidebarToggle" class="sidebar-toggle" title="Toggle sidebar">◀</button>
+    </aside>
+
+    <!-- Ticket Modal -->
+    <div id="ticketModal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Create Support Ticket</h3>
+          <button id="closeModal" class="modal-close">&times;</button>
+        </div>
+        <form id="ticketForm">
+          <div class="form-group">
+            <label for="ticketSubject">Subject</label>
+            <input type="text" id="ticketSubject" placeholder="Brief description of your issue" required />
+          </div>
+          <div class="form-group">
+            <label for="ticketDescription">Description</label>
+            <textarea id="ticketDescription" rows="4" placeholder="Describe your issue in detail..."></textarea>
+          </div>
+          <div class="form-group">
+            <label for="ticketPriority">Priority</label>
+            <select id="ticketPriority">
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+          <button type="submit" class="submit-ticket-btn">Create Ticket</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Main Chat Area -->
+    <main class="chat-area">
+      <header class="chat-header">
+        <div class="header-left">
+          <button id="menuBtn" class="menu-btn">☰</button>
+          <div class="header-info">
+            <h2>GT Assist</h2>
+            <span class="status-badge" id="statusBadge">● Online</span>
+          </div>
+        </div>
+        <div class="header-right">
+          <button id="autoSpeakToggle" class="auto-speak-btn active" title="Auto-speak replies">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            </svg>
+          </button>
+          <div class="lang-indicator" id="langIndicator">
+            <span class="lang-tag active" data-lang="en">EN</span>
+            <span class="lang-tag" data-lang="hi">हि</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="messages-container" id="messagesContainer">
+        <div class="welcome-message">
+          <div class="welcome-emoji">👋</div>
+          <h2>Welcome to Germanium Technologies</h2>
+          <p>I'm <strong>GT Assist</strong>, your virtual assistant. How may I help you today?</p>
+          <div class="suggestion-chips">
+            <button class="chip" data-msg="Tell me about Germanium Technologies">🏢 About GTL</button>
+            <button class="chip" data-msg="What services do you offer?">💼 Services</button>
+            <button class="chip" data-msg="How can I contact Germanium Technologies?">📞 Contact Info</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea id="messageInput" placeholder="Type or click 🎙️ to speak... टाइप करें या बोलें..."
+            rows="1"></textarea>
+          <button id="micBtn" class="mic-btn" title="Click to speak">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+            <div class="mic-pulse"></div>
+          </button>
+          <button id="sendBtn" class="send-btn" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+        <p class="input-hint">Press Enter to send · 🎙️ Click mic to speak · 🔊 Auto-speak is on</p>
+      </div>
+    </main>
+  </div>
+  <script src="script.js"></script>
+</body>
+
+</html>

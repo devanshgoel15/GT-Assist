@@ -1,0 +1,19 @@
+{
+    "name": "bilingual-chatbot",
+    "version": "1.0.0",
+    "description": "A bilingual Hindi-English chatbot powered by Google Gemini",
+    "type": "module",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "node --watch server.js"
+    },
+    "dependencies": {
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.7",
+        "express": "^4.21.2",
+        "express-session": "^1.19.0",
+        "node-fetch": "^3.3.2",
+        "pg": "^8.20.0"
+    }
+}
