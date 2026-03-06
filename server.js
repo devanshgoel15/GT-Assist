@@ -45,6 +45,8 @@ const BYTEZ_API_URL = "https://api.bytez.com/models/v2/openai/gpt-4o";
 
 if (!BYTEZ_API_KEY) {
   console.warn("⚠️  WARNING: BYTEZ_API_KEY is not set in .env — chat will fail!");
+} else {
+  console.log(`🔑 BYTEZ_API_KEY loaded (${BYTEZ_API_KEY.substring(0, 4)}...${BYTEZ_API_KEY.slice(-4)})`);
 }
 
 const SYSTEM_PROMPT = `You are GT Assist — the official AI assistant of Germanium Technologies Limited. You are friendly, professional, and bilingual (Hindi & English).
@@ -280,10 +282,12 @@ app.post("/api/chat", async (req, res) => {
     res.json({ reply: cleanReply, ticket: ticketCreated });
   } catch (error) {
     console.error("Bytez API Error:", error.message);
+    console.error("Full error:", error.toString());
 
     if (error.status === 401 || error.message?.includes("unauthorized") || error.message?.includes("API key")) {
       return res.status(401).json({
         error: "Invalid API key. Please check your BYTEZ_API_KEY in .env",
+        detail: error.message,
       });
     }
     if (error.status === 429 || error.message?.includes("quota") || error.message?.includes("rate")) {
