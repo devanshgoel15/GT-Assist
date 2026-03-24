@@ -3,7 +3,8 @@ import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
 import session from "express-session";
-import { initDB, getOrCreateUser, saveChat, trackEvent, createTicket } from "./db.js";
+import bcrypt from "bcryptjs";
+import { initDB, getOrCreateUser, saveChat, trackEvent, createTicket, getStaffByEmail, createStaff } from "./db.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,11 +34,15 @@ import userRoutes from "./routes/users.js";
 import chatRoutes from "./routes/chats.js";
 import ticketRoutes from "./routes/tickets.js";
 import analyticsRoutes from "./routes/analytics.js";
+import authRoutes from "./routes/auth.js";
+import adminRoutes from "./routes/admin.js";
 
 app.use("/api/user", userRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Bytez API config
 const BYTEZ_API_KEY = process.env.BYTEZ_API_KEY;
@@ -300,12 +305,24 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+// Seed default admin account
+async function seedAdmin() {
+  const existing = await getStaffByEmail("admin@gtl.com");
+  if (!existing) {
+    const hash = await bcrypt.hash("admin123", 10);
+    await createStaff("admin@gtl.com", hash, "Admin", "admin");
+    console.log("👑 Default admin created: admin@gtl.com / admin123");
+  }
+}
+
 // Initialize DB then start server
-initDB().then(() => {
+initDB().then(async () => {
+  await seedAdmin();
   app.listen(PORT, () => {
     console.log(`🤖 GT Assist server running at http://localhost:${PORT}`);
     console.log(`📡 Using Bytez API with GPT-4o model`);
     console.log(`📦 PostgreSQL database ready`);
+    console.log(`🔐 Admin dashboard: http://localhost:${PORT}/admin.html`);
   });
 }).catch((err) => {
   console.error("Failed to initialize database:", err);

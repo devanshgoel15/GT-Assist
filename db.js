@@ -30,6 +30,18 @@ export async function initDB() {
     )
   `);
 
+  // Staff table for RBAC
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS staff (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'agent',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tickets (
       id SERIAL PRIMARY KEY,
@@ -38,8 +50,27 @@ export async function initDB() {
       description TEXT,
       status TEXT DEFAULT 'open',
       priority TEXT DEFAULT 'normal',
+      assigned_to INTEGER REFERENCES staff(id),
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Add assigned_to column if it doesn't exist (for existing databases)
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assigned_to INTEGER REFERENCES staff(id);
+    EXCEPTION WHEN others THEN NULL;
+    END $$;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ticket_replies (
+      id SERIAL PRIMARY KEY,
+      ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+      staff_id INTEGER NOT NULL REFERENCES staff(id),
+      message TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
@@ -59,14 +90,12 @@ export async function initDB() {
 // ========== User Operations ==========
 
 export async function getOrCreateUser(sessionId) {
-  // Try to find existing user
   const existing = await pool.query("SELECT * FROM users WHERE session_id = $1", [sessionId]);
   if (existing.rows.length > 0) {
     await pool.query("UPDATE users SET last_seen = NOW() WHERE session_id = $1", [sessionId]);
     return existing.rows[0];
   }
 
-  // Create new user and return it
   const result = await pool.query(
     "INSERT INTO users (session_id) VALUES ($1) RETURNING *",
     [sessionId]
@@ -141,6 +170,95 @@ export async function updateTicket(ticketId, userId, updates) {
   }
 }
 
+// ========== Staff Operations (RBAC) ==========
+
+export async function createStaff(email, passwordHash, name, role = "agent") {
+  const result = await pool.query(
+    "INSERT INTO staff (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role, created_at",
+    [email, passwordHash, name, role]
+  );
+  return result.rows[0];
+}
+
+export async function getStaffByEmail(email) {
+  const result = await pool.query("SELECT * FROM staff WHERE email = $1", [email]);
+  return result.rows[0] || null;
+}
+
+export async function getStaffById(id) {
+  const result = await pool.query("SELECT id, email, name, role, created_at FROM staff WHERE id = $1", [id]);
+  return result.rows[0] || null;
+}
+
+export async function getAllStaff() {
+  const result = await pool.query("SELECT id, email, name, role, created_at FROM staff ORDER BY created_at DESC");
+  return result.rows;
+}
+
+export async function deleteStaff(id) {
+  await pool.query("DELETE FROM staff WHERE id = $1", [id]);
+}
+
+// ========== Admin Ticket Operations ==========
+
+export async function getAllTickets() {
+  const result = await pool.query(`
+    SELECT t.*, u.name as user_name, u.session_id as user_session,
+           s.name as assigned_to_name
+    FROM tickets t
+    LEFT JOIN users u ON t.user_id = u.id
+    LEFT JOIN staff s ON t.assigned_to = s.id
+    ORDER BY t.created_at DESC
+  `);
+  return result.rows;
+}
+
+export async function getTicketsByStaff(staffId) {
+  const result = await pool.query(`
+    SELECT t.*, u.name as user_name, u.session_id as user_session,
+           s.name as assigned_to_name
+    FROM tickets t
+    LEFT JOIN users u ON t.user_id = u.id
+    LEFT JOIN staff s ON t.assigned_to = s.id
+    WHERE t.assigned_to = $1
+    ORDER BY t.created_at DESC
+  `, [staffId]);
+  return result.rows;
+}
+
+export async function assignTicket(ticketId, staffId) {
+  await pool.query(
+    "UPDATE tickets SET assigned_to = $1, updated_at = NOW() WHERE id = $2",
+    [staffId, ticketId]
+  );
+}
+
+export async function updateTicketStatus(ticketId, status) {
+  await pool.query(
+    "UPDATE tickets SET status = $1, updated_at = NOW() WHERE id = $2",
+    [status, ticketId]
+  );
+}
+
+export async function addTicketReply(ticketId, staffId, message) {
+  const result = await pool.query(
+    "INSERT INTO ticket_replies (ticket_id, staff_id, message) VALUES ($1, $2, $3) RETURNING *",
+    [ticketId, staffId, message]
+  );
+  return result.rows[0];
+}
+
+export async function getTicketReplies(ticketId) {
+  const result = await pool.query(`
+    SELECT tr.*, s.name as staff_name, s.role as staff_role
+    FROM ticket_replies tr
+    LEFT JOIN staff s ON tr.staff_id = s.id
+    WHERE tr.ticket_id = $1
+    ORDER BY tr.created_at ASC
+  `, [ticketId]);
+  return result.rows;
+}
+
 // ========== Analytics Operations ==========
 
 export async function trackEvent(userId, eventType, metadata = null) {
@@ -157,14 +275,12 @@ export async function getAnalyticsSummary() {
   const totalTickets = (await pool.query("SELECT COUNT(*) as count FROM tickets")).rows[0].count;
   const openTickets = (await pool.query("SELECT COUNT(*) as count FROM tickets WHERE status = 'open'")).rows[0].count;
 
-  // Language breakdown
   const langResult = await pool.query("SELECT language, COUNT(*) as count FROM chats GROUP BY language");
   const languageBreakdown = {};
   for (const row of langResult.rows) {
     languageBreakdown[row.language] = parseInt(row.count);
   }
 
-  // Events by type
   const eventsResult = await pool.query("SELECT event_type, COUNT(*) as count FROM analytics GROUP BY event_type");
   const eventBreakdown = {};
   for (const row of eventsResult.rows) {
