@@ -109,8 +109,7 @@ export async function initDB() {
     UPDATE tickets SET priority = 'high' WHERE priority = 'urgent';
   `);
 
-  // Team chat messages table (drop and recreate to fix any schema issues)
-  await pool.query(`DROP TABLE IF EXISTS team_messages`);
+  // Team chat messages table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS team_messages (
       id SERIAL PRIMARY KEY,
