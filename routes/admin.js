@@ -6,12 +6,17 @@ import {
     getTicketsByStaff,
     assignTicket,
     updateTicketStatus,
+    updateTicketPriority,
+    updateTicketFields,
     addTicketReply,
     getTicketReplies,
+    addInternalNote,
+    getInternalNotes,
     getAllStaff,
     createStaff,
     deleteStaff,
     getStaffById,
+    updateStaffRole,
 } from "../db.js";
 
 const router = express.Router();
@@ -78,6 +83,46 @@ router.put("/tickets/:id/status", async (req, res) => {
     }
 });
 
+// PUT /api/admin/tickets/:id/priority — update ticket priority
+router.put("/tickets/:id/priority", async (req, res) => {
+    try {
+        const { priority } = req.body;
+        if (!priority || !["low", "normal", "high"].includes(priority)) {
+            return res.status(400).json({ error: "Valid priority is required (low, normal, high)" });
+        }
+
+        // Agents can only update their assigned tickets
+        if (req.staff.role === "agent") {
+            const tickets = await getTicketsByStaff(req.staff.id);
+            const ticketIds = tickets.map((t) => t.id);
+            if (!ticketIds.includes(parseInt(req.params.id))) {
+                return res.status(403).json({ error: "You can only update tickets assigned to you" });
+            }
+        }
+
+        await updateTicketPriority(req.params.id, priority);
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Update ticket priority error:", error);
+        res.status(500).json({ error: "Failed to update ticket priority" });
+    }
+});
+
+// PUT /api/admin/tickets/:id/edit — edit ticket subject/description (Admin & Team only)
+router.put("/tickets/:id/edit", requireRole("admin", "team"), async (req, res) => {
+    try {
+        const { subject, description } = req.body;
+        if (!subject && description === undefined) {
+            return res.status(400).json({ error: "At least subject or description is required" });
+        }
+        await updateTicketFields(req.params.id, { subject, description });
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Edit ticket error:", error);
+        res.status(500).json({ error: "Failed to edit ticket" });
+    }
+});
+
 // POST /api/admin/tickets/:id/replies — add reply
 router.post("/tickets/:id/replies", async (req, res) => {
     try {
@@ -120,6 +165,51 @@ router.get("/tickets/:id/replies", async (req, res) => {
     } catch (error) {
         console.error("Get replies error:", error);
         res.status(500).json({ error: "Failed to get replies" });
+    }
+});
+
+// POST /api/admin/tickets/:id/notes — add internal note
+router.post("/tickets/:id/notes", async (req, res) => {
+    try {
+        const { content } = req.body;
+        if (!content) {
+            return res.status(400).json({ error: "content is required" });
+        }
+
+        // Agents can only add notes to their assigned tickets
+        if (req.staff.role === "agent") {
+            const tickets = await getTicketsByStaff(req.staff.id);
+            const ticketIds = tickets.map((t) => t.id);
+            if (!ticketIds.includes(parseInt(req.params.id))) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
+
+        const note = await addInternalNote(req.params.id, req.staff.id, content);
+        res.json({ note });
+    } catch (error) {
+        console.error("Add note error:", error);
+        res.status(500).json({ error: "Failed to add note" });
+    }
+});
+
+// GET /api/admin/tickets/:id/notes — get internal notes
+router.get("/tickets/:id/notes", async (req, res) => {
+    try {
+        // Agents can only view notes on their assigned tickets
+        if (req.staff.role === "agent") {
+            const tickets = await getTicketsByStaff(req.staff.id);
+            const ticketIds = tickets.map((t) => t.id);
+            if (!ticketIds.includes(parseInt(req.params.id))) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
+
+        const notes = await getInternalNotes(req.params.id);
+        res.json({ notes });
+    } catch (error) {
+        console.error("Get notes error:", error);
+        res.status(500).json({ error: "Failed to get notes" });
     }
 });
 
@@ -174,6 +264,26 @@ router.delete("/staff/:id", requireRole("admin"), async (req, res) => {
     } catch (error) {
         console.error("Delete staff error:", error);
         res.status(500).json({ error: "Failed to delete staff" });
+    }
+});
+
+// PUT /api/admin/staff/:id/role — change staff role (Admin only)
+router.put("/staff/:id/role", requireRole("admin"), async (req, res) => {
+    try {
+        const { role } = req.body;
+        const validRoles = ["admin", "team", "agent"];
+        if (!role || !validRoles.includes(role)) {
+            return res.status(400).json({ error: "Valid role is required (admin, team, agent)" });
+        }
+        // Prevent changing own role
+        if (parseInt(req.params.id) === req.staff.id) {
+            return res.status(400).json({ error: "You cannot change your own role" });
+        }
+        await updateStaffRole(req.params.id, role);
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Update staff role error:", error);
+        res.status(500).json({ error: "Failed to update staff role" });
     }
 });
 

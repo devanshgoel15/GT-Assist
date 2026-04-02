@@ -678,7 +678,7 @@ async function loadTickets() {
                 <div class="ticket-item">
                     <div class="ticket-subject">#${t.id} ${escapeHTML(t.subject)}</div>
                     <div class="ticket-meta">
-                        <span class="ticket-status ${t.priority === 'urgent' ? 'urgent' : t.priority === 'high' ? 'high' : t.status}">${escapeHTML(t.status)}</span>
+                        <span class="ticket-status ${t.priority === 'high' ? 'high' : t.priority === 'normal' ? 'normal' : 'low'} ${t.status}">${escapeHTML(t.status)}</span>
                         <span>${escapeHTML(t.created_at || '')}</span>
                     </div>
                 </div>

@@ -36,6 +36,7 @@ import ticketRoutes from "./routes/tickets.js";
 import analyticsRoutes from "./routes/analytics.js";
 import authRoutes from "./routes/auth.js";
 import adminRoutes from "./routes/admin.js";
+import teamchatRoutes from "./routes/teamchat.js";
 
 app.use("/api/user", userRoutes);
 app.use("/api/chats", chatRoutes);
@@ -43,6 +44,7 @@ app.use("/api/tickets", ticketRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/teamchat", teamchatRoutes);
 
 // Bytez API config
 const BYTEZ_API_KEY = process.env.BYTEZ_API_KEY;

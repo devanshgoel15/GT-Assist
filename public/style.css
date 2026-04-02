@@ -306,13 +306,18 @@ body {
 }
 
 .ticket-status.high {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.ticket-status.normal {
   background: rgba(245, 158, 11, 0.15);
   color: #f59e0b;
 }
 
-.ticket-status.urgent {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+.ticket-status.low {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
 }
 
 .ticket-status.closed {

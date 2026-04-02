@@ -84,6 +84,42 @@ export async function initDB() {
     )
   `);
 
+  // Internal notes table (visible only to staff, not customers)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS internal_notes (
+      id SERIAL PRIMARY KEY,
+      ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      staff_id INTEGER NOT NULL REFERENCES staff(id),
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Add resolved_at column for avg resolution time tracking
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;
+    EXCEPTION WHEN others THEN NULL;
+    END $$;
+  `);
+
+  // Migrate existing priorities to the new exactly 3 levels
+  await pool.query(`
+    UPDATE tickets SET priority = 'normal' WHERE priority = 'medium';
+    UPDATE tickets SET priority = 'high' WHERE priority = 'urgent';
+  `);
+
+  // Team chat messages table (drop and recreate to fix any schema issues)
+  await pool.query(`DROP TABLE IF EXISTS team_messages`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS team_messages (
+      id SERIAL PRIMARY KEY,
+      staff_id INTEGER NOT NULL REFERENCES staff(id),
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   console.log("📦 Database initialized (PostgreSQL — Neon)");
 }
 
@@ -234,10 +270,18 @@ export async function assignTicket(ticketId, staffId) {
 }
 
 export async function updateTicketStatus(ticketId, status) {
-  await pool.query(
-    "UPDATE tickets SET status = $1, updated_at = NOW() WHERE id = $2",
-    [status, ticketId]
-  );
+  // If resolving, set resolved_at; if reopening, clear it
+  if (status === 'resolved' || status === 'closed') {
+    await pool.query(
+      "UPDATE tickets SET status = $1, updated_at = NOW(), resolved_at = COALESCE(resolved_at, NOW()) WHERE id = $2",
+      [status, ticketId]
+    );
+  } else {
+    await pool.query(
+      "UPDATE tickets SET status = $1, updated_at = NOW(), resolved_at = NULL WHERE id = $2",
+      [status, ticketId]
+    );
+  }
 }
 
 export async function addTicketReply(ticketId, staffId, message) {
@@ -257,6 +301,69 @@ export async function getTicketReplies(ticketId) {
     ORDER BY tr.created_at ASC
   `, [ticketId]);
   return result.rows;
+}
+
+// ========== Internal Notes Operations ==========
+
+export async function addInternalNote(ticketId, staffId, content) {
+  const result = await pool.query(
+    "INSERT INTO internal_notes (ticket_id, staff_id, content) VALUES ($1, $2, $3) RETURNING *",
+    [ticketId, staffId, content]
+  );
+  return result.rows[0];
+}
+
+export async function getInternalNotes(ticketId) {
+  const result = await pool.query(`
+    SELECT n.*, s.name as staff_name, s.role as staff_role
+    FROM internal_notes n
+    LEFT JOIN staff s ON n.staff_id = s.id
+    WHERE n.ticket_id = $1
+    ORDER BY n.created_at ASC
+  `, [ticketId]);
+  return result.rows;
+}
+
+// ========== Extended Ticket Operations ==========
+
+export async function updateTicketPriority(ticketId, priority) {
+  await pool.query(
+    "UPDATE tickets SET priority = $1, updated_at = NOW() WHERE id = $2",
+    [priority, ticketId]
+  );
+}
+
+export async function updateTicketFields(ticketId, fields) {
+  const { subject, description } = fields;
+  const updates = [];
+  const values = [];
+  let idx = 1;
+
+  if (subject !== undefined) {
+    updates.push(`subject = $${idx++}`);
+    values.push(subject);
+  }
+  if (description !== undefined) {
+    updates.push(`description = $${idx++}`);
+    values.push(description);
+  }
+  if (updates.length === 0) return;
+
+  updates.push(`updated_at = NOW()`);
+  values.push(ticketId);
+  await pool.query(
+    `UPDATE tickets SET ${updates.join(', ')} WHERE id = $${idx}`,
+    values
+  );
+}
+
+// ========== Staff Role Update ==========
+
+export async function updateStaffRole(staffId, role) {
+  await pool.query(
+    "UPDATE staff SET role = $1 WHERE id = $2",
+    [role, staffId]
+  );
 }
 
 // ========== Analytics Operations ==========
@@ -295,4 +402,87 @@ export async function getAnalyticsSummary() {
     languageBreakdown,
     eventBreakdown,
   };
+}
+
+export async function getEnhancedAnalytics() {
+  const totalTickets = (await pool.query("SELECT COUNT(*) as count FROM tickets")).rows[0].count;
+  const openTickets = (await pool.query("SELECT COUNT(*) as count FROM tickets WHERE status = 'open'")).rows[0].count;
+  const inProgressTickets = (await pool.query("SELECT COUNT(*) as count FROM tickets WHERE status = 'in_progress'")).rows[0].count;
+  const resolvedTickets = (await pool.query("SELECT COUNT(*) as count FROM tickets WHERE status = 'resolved' OR status = 'closed'")).rows[0].count;
+
+  // Tickets per agent
+  const perAgent = await pool.query(`
+    SELECT s.id, s.name, s.role,
+      COUNT(t.id) as total_tickets,
+      COUNT(CASE WHEN t.status = 'open' THEN 1 END) as open_tickets,
+      COUNT(CASE WHEN t.status = 'in_progress' THEN 1 END) as in_progress_tickets,
+      COUNT(CASE WHEN t.status = 'resolved' OR t.status = 'closed' THEN 1 END) as resolved_tickets
+    FROM staff s
+    LEFT JOIN tickets t ON t.assigned_to = s.id
+    WHERE s.role IN ('agent', 'team')
+    GROUP BY s.id, s.name, s.role
+    ORDER BY total_tickets DESC
+  `);
+
+  // Average resolution time (in hours)
+  const avgTimeResult = await pool.query(`
+    SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as avg_hours
+    FROM tickets
+    WHERE resolved_at IS NOT NULL
+  `);
+  const avgResolutionHours = avgTimeResult.rows[0].avg_hours
+    ? parseFloat(avgTimeResult.rows[0].avg_hours).toFixed(1)
+    : null;
+
+  // Tickets by priority
+  const byPriority = await pool.query(`
+    SELECT priority, COUNT(*) as count FROM tickets GROUP BY priority
+  `);
+  const priorityBreakdown = {};
+  for (const row of byPriority.rows) {
+    priorityBreakdown[row.priority] = parseInt(row.count);
+  }
+
+  // Unassigned tickets
+  const unassigned = (await pool.query("SELECT COUNT(*) as count FROM tickets WHERE assigned_to IS NULL")).rows[0].count;
+
+  return {
+    totalTickets: parseInt(totalTickets),
+    openTickets: parseInt(openTickets),
+    inProgressTickets: parseInt(inProgressTickets),
+    resolvedTickets: parseInt(resolvedTickets),
+    unassignedTickets: parseInt(unassigned),
+    avgResolutionHours,
+    perAgent: perAgent.rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      role: r.role,
+      totalTickets: parseInt(r.total_tickets),
+      openTickets: parseInt(r.open_tickets),
+      inProgressTickets: parseInt(r.in_progress_tickets),
+      resolvedTickets: parseInt(r.resolved_tickets),
+    })),
+    priorityBreakdown,
+  };
+}
+
+// ========== Team Chat Operations ==========
+
+export async function sendTeamMessage(staffId, content) {
+  const result = await pool.query(
+    "INSERT INTO team_messages (staff_id, content) VALUES ($1, $2) RETURNING *",
+    [staffId, content]
+  );
+  return result.rows[0];
+}
+
+export async function getTeamMessages(limit = 100) {
+  const result = await pool.query(`
+    SELECT m.*, s.name as staff_name, s.role as staff_role
+    FROM team_messages m
+    LEFT JOIN staff s ON m.staff_id = s.id
+    ORDER BY m.created_at ASC
+    LIMIT $1
+  `, [limit]);
+  return result.rows;
 }

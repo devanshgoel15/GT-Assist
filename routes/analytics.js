@@ -1,5 +1,6 @@
 import express from "express";
-import { trackEvent, getAnalyticsSummary, getOrCreateUser } from "../db.js";
+import { trackEvent, getAnalyticsSummary, getEnhancedAnalytics, getOrCreateUser } from "../db.js";
+import { requireAuth, requireRole, attachStaff } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -33,6 +34,17 @@ router.get("/summary", async (req, res) => {
     } catch (error) {
         console.error("Analytics summary error:", error);
         res.status(500).json({ error: "Failed to get analytics" });
+    }
+});
+
+// Get enhanced analytics (admin/team only)
+router.get("/enhanced", requireAuth, attachStaff, requireRole("admin", "team"), async (req, res) => {
+    try {
+        const analytics = await getEnhancedAnalytics();
+        res.json({ analytics });
+    } catch (error) {
+        console.error("Enhanced analytics error:", error);
+        res.status(500).json({ error: "Failed to get enhanced analytics" });
     }
 });
 
