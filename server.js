@@ -4,7 +4,12 @@ import cors from "cors";
 import fetch from "node-fetch";
 import session from "express-session";
 import bcrypt from "bcryptjs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { initDB, getOrCreateUser, saveChat, trackEvent, createTicket, getStaffByEmail, createStaff } from "./db.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,7 +32,12 @@ app.use(
   })
 );
 
-app.use(express.static("public"));
+// Serve landing page at root (before static middleware so it takes priority over index.html)
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "landing.html"));
+});
+
+app.use(express.static("public", { index: false }));
 
 // Import routes
 import userRoutes from "./routes/users.js";
